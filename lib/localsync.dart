@@ -3,186 +3,189 @@ library localsync;
 import 'dart:io';
 import 'dart:convert';
 import 'package:path/path.dart' as p;
+import 'package:belatuk_json_serializer/belatuk_json_serializer.dart'
+    as jsonSerializer;
 
 const supportedConfigVersion = 1;
 
-Future<Map<String, List<String>>> findConflicts(String targetPath) async {
-  final targetDir = Directory(targetPath);
-  if (!targetDir.existsSync()) {
-    throw Exception('Error: Target folder "$targetPath" does not exist.');
+class LocalSyncConfig {
+  int version;
+  List<String> packages;
+
+  LocalSyncConfig({version, packages})
+    : version = version ?? supportedConfigVersion,
+      packages = packages ?? [];
+}
+
+class Target {
+  final String path;
+  final String configFileName = 'localsync.json';
+  final String inboxDirName = 'localsync-inbox';
+
+  Target(this.path) {
+    if (!Directory(path).existsSync()) {
+      throw Exception('Error: Target folder "$path" does not exist.');
+    }
   }
 
-  final configFile = File(p.join(targetDir.path, 'localsync.json'));
-  if (!configFile.existsSync()) {
-    throw Exception(
-      'Error: localsync.json not found in "$targetPath". Please run --init first.',
-    );
-  }
+  String get configFilePath => p.join(path, configFileName);
+  File get configFile => File(configFilePath);
+  String get inboxPath => p.join(path, inboxDirName);
+  Directory get inboxDir => Directory(inboxPath);
 
-  final configString = await configFile.readAsString();
-  final config = jsonDecode(configString);
-  final version = config['version'];
-  final packages = config['packages'] as List<dynamic>?;
-  if (version == null || (version is int && version > supportedConfigVersion)) {
-    throw Exception(
-      'Error: Invalid or missing version in localsync.yml in "$targetPath".',
-    );
-  }
-  if (packages == null || packages is! List) {
-    throw Exception('Error: Packages not found or not a list');
-  }
-  return await findConflictsForTarget(
-    targetPath,
-    Directory(p.join(targetPath, 'localsync-inbox')),
-    packages.cast<String>(),
+  LocalSyncConfig get config => jsonSerializer.deserialize(
+    this.configFile.readAsStringSync(),
+    outputType: LocalSyncConfig,
   );
-}
 
-Future<void> initializeTarget(String targetPath) async {
-  final targetDir = Directory(targetPath);
-  if (!targetDir.existsSync()) {
-    throw Exception('Error: Target folder "$targetPath" does not exist.');
+  Future<bool> initialize() async {
+    final targetDir = Directory(this.path);
+    if (this.configFile.existsSync()) {
+      return false;
+    }
+    final config = LocalSyncConfig(version: supportedConfigVersion);
+    final jsonString = jsonSerializer.serialize(config);
+    this.configFile.writeAsStringSync(jsonString);
+    return true;
   }
 
-  final configFile = File(p.join(targetDir.path, 'localsync.json'));
-  if (!configFile.existsSync()) {
-    final yamlContent = {'version': supportedConfigVersion};
-    final yamlString = jsonEncode(yamlContent);
-    configFile.writeAsStringSync(yamlString);
-    print('Initialized localsync.json in $targetPath');
-  } else {
-    print('localsync.json already exists in $targetPath');
-  }
-}
+  Future<List<String>> addPackages(List<String> packageNames) async {
+    final config = this.config;
+    List<String> packages = config.packages ?? [];
 
-Future<void> addPackageToTarget(String targetPath, String packageToAdd) async {
-  final targetDir = Directory(targetPath);
-  if (!targetDir.existsSync()) {
-    throw Exception('Error: Target folder "$targetPath" does not exist.');
-  }
-
-  final configFile = File(p.join(targetDir.path, 'localsync.json'));
-  if (!configFile.existsSync()) {
-    throw Exception(
-      'Error: localsync.json not found in "$targetPath". Please run --init first.',
-    );
+    List<String> packagesToAdd =
+        packageNames
+            .where((packageName) => !packages.contains(packageName))
+            .toList();
+    if (!packagesToAdd.isEmpty) {
+      packages.addAll(packagesToAdd);
+      config.packages = packages;
+      final jsonString = jsonSerializer.serialize(config);
+      this.configFile.writeAsStringSync(jsonString);
+    }
+    return packagesToAdd;
   }
 
-  final configString = await configFile.readAsString();
-  final config = jsonDecode(configString);
+  Future<List<String>> installInbox() async {
+    final inboxDir = this.inboxDir;
 
-  List<dynamic> packages = (config['packages'] as List<dynamic>?) ?? [];
+    if (!inboxDir.existsSync()) {
+      inboxDir.createSync();
+    }
 
-  if (!packages.contains(packageToAdd)) {
-    packages.add(packageToAdd);
-    config['packages'] = packages = packages;
+    final config = this.config;
+    final packages = config.packages;
+    List<String> createdPackages = [];
 
-    final jsonString = jsonEncode(config);
-    configFile.writeAsStringSync(jsonString);
-    print('Added package "$packageToAdd" to $targetPath/localsync.json');
-  } else {
-    print(
-      'Package "$packageToAdd" already exists in $targetPath/localsync.json',
+    for (final package in packages) {
+      final packageDir = Directory(p.join(inboxDir.path, package));
+      if (!packageDir.existsSync()) {
+        packageDir.createSync();
+        createdPackages.add(packageDir.path);
+      }
+    }
+    return createdPackages;
+  }
+
+  Future<Map<String, List<String>>> findConflicts([Target? inboxTarget]) async {
+    final targetDir = Directory(this.path);
+    final config = this.config;
+    final version = config.version;
+    final packages = config.packages;
+    if (version == null ||
+        (version is int && version > supportedConfigVersion)) {
+      throw Exception(
+        'Error: Invalid or missing version in "${this.configFilePath}".',
+      );
+    }
+    if (packages == null || packages is! List) {
+      throw Exception('Error: Packages not found or not a list');
+    }
+    final inboxPath = (inboxTarget ?? this).inboxPath;
+    return await findConflictsForTarget(
+      inboxPath,
+      this.path,
+      packages.cast<String>(),
     );
   }
 }
 
 Future<Map<String, List<String>>> findConflictsForTarget(
-  // Changed return type
+  String inboxPath,
   String targetPath,
-  Directory inboxDir,
   List<String> packages,
 ) async {
-  if (!inboxDir.existsSync()) {
+  if (!Directory(inboxPath).existsSync()) {
     return {};
   }
 
   return Stream.fromIterable(packages)
-      .asyncMap((package) async {
-        List<String> conflictingFiles = [];
-        final packageDir = Directory('${inboxDir.path}/$package');
-        if (!packageDir.existsSync()) {
-          return conflictingFiles;
+      .map(
+        (package) => (
+          package: package,
+          conflictingFiles: findConflictsForPackage(
+            Directory(p.join(inboxPath, package)),
+            Directory(p.join(targetPath, package)),
+          ),
+        ),
+      )
+      .fold({}, (result, element) {
+        if (element.conflictingFiles.isEmpty) {
+          return result;
         }
-
-        List<FileSystemEntity> filesToCheck = [];
-        try {
-          filesToCheck = packageDir.listSync(
-            recursive: true,
-            followLinks: false,
-          );
-        } catch (e) {
-          print("Error listing files in $packageDir: $e");
-          return conflictingFiles;
-        }
-
-        for (final entity in filesToCheck) {
-          if (entity is File) {
-            final relativePath = entity.path.replaceFirst(
-              packageDir.path + Platform.pathSeparator,
-              '',
-            );
-            final conflictLocations = await findConflictsForPackage(
-              targetPath,
-              relativePath,
-              package,
-              packages,
-            );
-            if (conflictLocations.isNotEmpty) {
-              conflictingFiles.add(
-                '${package}/$relativePath: found in ${conflictLocations.join(', ')}',
-              );
-            }
-          }
-        }
-        return conflictingFiles;
-      })
-      .fold<Map<String, List<String>>>({}, (previousValue, element) {
-        previousValue[packages.first] = element;
-        return previousValue;
+        result[element.package] =
+            element.conflictingFiles
+                .map((file) => p.relative(file.path, from: targetPath))
+                .toList();
+        return result;
       });
 }
 
-Future<List<String>> findConflictsForPackage(
-  String currentTargetPath,
-  String relativePath,
-  String package,
-  List<String> packages,
-) async {
-  List<String> conflictLocations = [];
-
-  for (final targetPath in Directory.current
-      .listSync()
-      .whereType<Directory>()
-      .map((e) => e.path)
-      .where((path) => path != currentTargetPath)) {
-    final targetDir = Directory(targetPath);
-    if (!targetDir.existsSync()) {
-      continue;
-    }
-
-    final configFile = File('${targetPath}/localsync.json');
-    if (!configFile.existsSync()) {
-      continue;
-    }
-
-    final configString = await configFile.readAsString();
-    final config = jsonDecode(configString);
-    final targetPackages = config['packages'] as List<dynamic>?;
-
-    if (targetPackages == null ||
-        targetPackages is! List ||
-        !targetPackages.contains(package)) {
-      continue;
-    }
-
-    final potentialConflictFile = File(
-      p.join(targetPath, package, relativePath),
-    );
-    if (potentialConflictFile.existsSync()) {
-      conflictLocations.add('$targetPath/$package/$relativePath');
-    }
+List<File> findConflictsForPackage(
+  Directory inboxPackageDir,
+  Directory packageDir,
+) {
+  List<File> conflictingFiles = [];
+  if (!(packageDir.existsSync() && inboxPackageDir.existsSync())) {
+    return conflictingFiles;
   }
-
-  return conflictLocations;
+  final targetFiles = packageDir.listSync().whereType<File>().toList();
+  conflictingFiles.addAll(
+    inboxPackageDir
+        .listSync()
+        .whereType<File>()
+        .cast<File?>()
+        .map(
+          // The conflictingFiles are to be filled with the target files.
+          (file) =>
+              file is Null
+                  ? null
+                  : targetFiles
+                      .where(
+                        (targetFile) =>
+                            p.basename(targetFile.path) ==
+                            p.basename(file.path),
+                      )
+                      .firstOrNull,
+        )
+        .whereType<File>(),
+  );
+  conflictingFiles.addAll(
+    inboxPackageDir
+        .listSync()
+        .whereType<Directory>()
+        .map(
+          (inboxSubpackageDir) => findConflictsForPackage(
+            inboxSubpackageDir,
+            Directory(
+              p.join(packageDir.path, p.basename(inboxSubpackageDir.path)),
+            ),
+          ),
+        )
+        .fold(
+          [],
+          (Iterable<File> left, List<File> right) => [...left, ...right],
+        ),
+  );
+  return conflictingFiles;
 }
