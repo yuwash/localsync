@@ -15,12 +15,19 @@ Future<void> recursiveCopy(
       final cpArguments = ['-arT', source, destination];
       final process = await Process.run('cp', cpArguments);
       if (process.exitCode != 0) {
-        throw ProcessException('cp', cpArguments, process.stderr, process.exitCode);
+        throw ProcessException(
+          'cp',
+          cpArguments,
+          process.stderr,
+          process.exitCode,
+        );
       }
       continue;
     }
     final sourceDir = Directory(source);
-    await for (final entity in sourceDir.list(recursive: true)) {
+    final Stream<FileSystemEntity> entities =
+        sourceDir.existsSync() ? sourceDir.list() : Stream.fromIterable([sourceDir]);
+    await for (final entity in entities) {
       final relativePath = p.relative(entity.path, from: source);
       final copyPath = p.join(destination, relativePath);
 
@@ -44,10 +51,17 @@ Future<void> recursiveCopy(
             entity.renameSync(copyPath);
           } else {
             targetDirectory.createSync();
-            await recursiveCopy(entity.path, [copyPath], useCpIfAvailable: useCp);
+            await recursiveCopy(entity.path, [
+              copyPath,
+            ], useCpIfAvailable: useCp);
           }
         } else {
-          await recursiveCopy(entity.path, [copyPath], move: move, useCpIfAvailable: useCp);
+          await recursiveCopy(
+            entity.path,
+            [copyPath],
+            move: move,
+            useCpIfAvailable: useCp,
+          );
         }
       }
     }
