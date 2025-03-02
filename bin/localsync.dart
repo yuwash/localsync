@@ -1,5 +1,5 @@
 import 'package:localsync/sync.dart' as sync;
-import 'package:localsync/localsync.dart' as target;
+import 'package:localsync/localsync.dart' as synctarget;
 import 'dart:io';
 import 'package:args/args.dart';
 import 'package:path/path.dart' as p;
@@ -79,7 +79,7 @@ Future<void> initializeTargets(List<String> targetPaths) async {
       continue;
     } else {
       try {
-        final target = target.Target(targetPath);
+        final target = synctarget.Target(targetPath);
         final initialized = await target.initialize();
         if (initialized) {
           print('Initialized ${target.configFile.path}');
@@ -99,7 +99,7 @@ Future<void> addPackagesToTargets(
 ) async {
   for (final targetPath in targetPaths) {
     try {
-      final target = target.Target(targetPath);
+      final target = synctarget.Target(targetPath);
       if (packagesToAdd.isNotEmpty) {
         final addedPackages = await target.addPackages(packagesToAdd);
         if (addedPackages.isNotEmpty) {
@@ -117,12 +117,16 @@ Future<void> addPackagesToTargets(
 Future<void> synchronize(List<String> targetPaths, {bool dryRun = true}) async {
   await for (final inboxTargetPath in Stream.fromIterable(targetPaths)) {
     try {
-      final inboxTarget = target.Target(inboxTargetPath);
+      final inboxTarget = synctarget.Target(inboxTargetPath);
+      if (!inboxTarget.inboxDir.existsSync()) {
+	print('No inbox found in $inboxTargetPath, skipping.');
+	continue;
+      }
       bool hasConflicts = false;
 
       await for (final targetPath in Stream.fromIterable(targetPaths)) {
         try {
-          final target = target.Target(targetPath);
+          final target = synctarget.Target(targetPath);
           final syncResult = await target.findConflicts(inboxTarget);
           if (syncResult.isNotEmpty) {
             hasConflicts = true;
@@ -151,7 +155,7 @@ Future<void> synchronize(List<String> targetPaths, {bool dryRun = true}) async {
 
           print('Moving contents of $inboxPath to its local target...');
           final inboxDestination = [inboxTargetPath];
-          await sync.recursiveCopy(inboxTarget.inboxPath, inboxDestination, doMove: true);
+          await sync.recursiveCopy(inboxTarget.inboxPath, inboxDestination, move: true);
         } else {
           print('Skipping copy and move due to conflicts.');
         }
@@ -165,7 +169,7 @@ Future<void> synchronize(List<String> targetPaths, {bool dryRun = true}) async {
 Future<void> installInboxDirectories(List<String> targetPaths) async {
   for (final targetPath in targetPaths) {
     try {
-      final target = target.Target(targetPath);
+      final target = synctarget.Target(targetPath);
 
       if (!target.inboxDir.existsSync()) {
         target.inboxDir.createSync();
