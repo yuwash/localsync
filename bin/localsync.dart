@@ -198,7 +198,7 @@ Future<void> synchronize(List<String> targetPaths, {bool dryRun = true}) async {
             hasConflicts = true;
             syncResult.forEach((package, files) {
               if (files.isNotEmpty) {
-                final inboxPackagePath = p.join(inboxTargetPath, package);
+                final inboxPackagePath = p.join(inboxTarget.inboxPath, package);
                 print('Conflicts found for $inboxPackagePath in $targetPath:');
                 files.forEach(print);
               }
