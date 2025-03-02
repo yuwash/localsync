@@ -49,7 +49,7 @@ class Target {
     return true;
   }
 
-  Future<List<String>> addPackages(List<String> packageNames) async {
+  Future<List<String>> addPackages(Iterable<String> packageNames) async {
     final config = this.config;
     List<String> packages = config.packages ?? [];
 
@@ -106,6 +106,11 @@ class Target {
   static Set<String> intersectionPackages(Iterable<Target> targets) => targets
       .map((target) => target.config.packages.toSet())
       .reduce((a, b) => a.intersection(b));
+
+  static Set<String> unionPackages(Iterable<Target> targets) => targets
+      // In contrast to intersection, a union is defined even for an empty set.
+      .map((target) => target.config.packages.toSet())
+      .fold(<String>{}, (a, b) => a..addAll(b));
 
   Future<Map<String, List<String>>> findConflicts([Target? inboxTarget]) async {
     final targetDir = Directory(this.path);

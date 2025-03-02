@@ -19,6 +19,12 @@ void main(List<String> arguments) async {
           help: 'Add a package to a target directory.',
         )
         ..addFlag(
+          'add-all',
+          abbr: 'A',
+          negatable: false,
+          help: 'Add all packages from all targets to each target.',
+        )
+        ..addFlag(
           'help',
           abbr: 'h',
           negatable: false,
@@ -67,6 +73,11 @@ void main(List<String> arguments) async {
   }
 
   final packagesToAdd = argResults['add'];
+  final addAll = argResults['add-all'] == true;
+
+  if (addAll) {
+    await addAllPackagesToTargets(targetPaths);
+  }
   await addPackagesToTargets(targetPaths, packagesToAdd);
   await synchronize(targetPaths, dryRun: !argResults['sync']);
 }
@@ -89,6 +100,27 @@ Future<void> initializeTargets(List<String> targetPaths) async {
       } catch (e) {
         print(e);
       }
+    }
+  }
+}
+
+Future<void> addAllPackagesToTargets(List<String> targetPaths) async {
+  final targets =
+      targetPaths.map((targetPath) => synctarget.Target(targetPath)).toList();
+
+  final allPackages = synctarget.Target.unionPackages(targets);
+
+  for (final targetPath in targetPaths) {
+    try {
+      final target = synctarget.Target(targetPath);
+      final addedPackages = await target.addPackages(allPackages);
+      if (addedPackages.isNotEmpty) {
+        print('Added $addedPackages to ${target.configFilePath}');
+      } else {
+        print('All packages already listed in ${target.configFilePath}');
+      }
+    } catch (e) {
+      print(e);
     }
   }
 }
