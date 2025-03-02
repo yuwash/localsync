@@ -17,6 +17,7 @@ localsync <target_folder1> <target_folder2> ...
 | `--init`        | `-i`  | Initialize a target directory.                                               |
 | `--add`         | `-a`  | Add a package to a target directory.                                        |
 | `--add-all`     | `-A`  | Add all packages from all targets to each target.                            |
+| `--clean`       | `-C`  | Removes any empty package directory inside an inbox.                         |
 | `--help`        | `-h`  | Display help information.                                                    |
 | `--install-inbox` | `-I`  | Install the inbox directory and package directories.                         |
 | `--sync`        | `-s`  | Synchronize the target directories (copy and delete files, resolves conflicts). |

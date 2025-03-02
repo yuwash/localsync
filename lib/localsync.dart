@@ -87,6 +87,30 @@ class Target {
     return createdPackages;
   }
 
+  Future<List<String>> cleanInbox() async {
+    final inboxDir = this.inboxDir;
+    List<String> deletedDirectories = [];
+
+    if (!inboxDir.existsSync()) {
+      return deletedDirectories;
+    }
+
+    final config = this.config;
+    final packages = config.packages;
+
+    for (final package in packages) {
+      final packageDir = Directory(p.join(inboxDir.path, package));
+      if (packageDir.existsSync()) {
+        final files = packageDir.listSync();
+        if (files.isEmpty) {
+          deletedDirectories.add(packageDir.path);
+          packageDir.deleteSync();
+        }
+      }
+    }
+    return deletedDirectories;
+  }
+
   ({Set<String> ourAdditional, Set<String> theirAdditional})? comparePackages(
     Target other,
   ) {

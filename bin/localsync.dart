@@ -25,6 +25,12 @@ void main(List<String> arguments) async {
           help: 'Add all packages from all targets to each target.',
         )
         ..addFlag(
+          'clean',
+          abbr: 'C',
+          negatable: false,
+          help: 'Removes any empty package directory inside an inbox.',
+        )
+        ..addFlag(
           'help',
           abbr: 'h',
           negatable: false,
@@ -79,6 +85,9 @@ void main(List<String> arguments) async {
     await addAllPackagesToTargets(targetPaths);
   }
   await addPackagesToTargets(targetPaths, packagesToAdd);
+  if (argResults['clean'] == true) {
+    await cleanInboxDirectories(targetPaths);
+  }
   await synchronize(targetPaths, dryRun: !argResults['sync']);
 }
 
@@ -100,6 +109,23 @@ Future<void> initializeTargets(List<String> targetPaths) async {
       } catch (e) {
         print(e);
       }
+    }
+  }
+}
+
+Future<void> cleanInboxDirectories(List<String> targetPaths) async {
+  for (final targetPath in targetPaths) {
+    try {
+      final target = synctarget.Target(targetPath);
+      final deletedDirectories = await target.cleanInbox();
+      if (deletedDirectories.isNotEmpty) {
+        print('Removed empty package directories in ${target.inboxPath}:');
+        deletedDirectories.forEach(print);
+      } else {
+        print('No empty package directories found in ${target.inboxPath}');
+      }
+    } catch (e) {
+      print(e);
     }
   }
 }
