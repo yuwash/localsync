@@ -115,12 +115,20 @@ Future<void> addPackagesToTargets(
 }
 
 Future<void> synchronize(List<String> targetPaths, {bool dryRun = true}) async {
+  final targets =
+      targetPaths.map((targetPath) => synctarget.Target(targetPath)).toList();
+  if (targets.length == 0) {
+    return; // Not an error but the intersection below won’t work.
+  }
+  final totalIntersectionPackages = synctarget.Target.intersectionPackages(
+    targets,
+  );
   await for (final inboxTargetPath in Stream.fromIterable(targetPaths)) {
     try {
       final inboxTarget = synctarget.Target(inboxTargetPath);
       if (!inboxTarget.inboxDir.existsSync()) {
-	print('No inbox found in $inboxTargetPath, skipping.');
-	continue;
+        print('No inbox found in $inboxTargetPath, skipping.');
+        continue;
       }
       bool hasConflicts = false;
 
@@ -137,28 +145,62 @@ Future<void> synchronize(List<String> targetPaths, {bool dryRun = true}) async {
                 files.forEach(print);
               }
             });
-          } else {
-            print('Ready to sync $targetPath');
           }
         } catch (e) {
           print(e);
         }
       }
 
-      if (!dryRun) {
-        if (!hasConflicts) {
-          final inboxPath = inboxTarget.inboxPath;
-          print('Copying from $inboxPath to all targets...');
-          final destinations =
-              targetPaths.where((path) => path != inboxTargetPath).toList();
-          await sync.recursiveCopy(inboxPath, destinations);
+      await for (final targetPath in Stream.fromIterable(targetPaths)) {
+        try {
+          final target = synctarget.Target(targetPath);
+          final packageComparison = inboxTarget.comparePackages(target);
+          if (packageComparison == null) {
+            continue;
+          }
+          if (packageComparison.ourAdditional.isNotEmpty) {
+            print('Difference in configured packages found:');
+            print(
+              '$inboxTargetPath has packages missing in $targetPath: ${packageComparison.ourAdditional}',
+            );
+          }
+          // No need to print their additional because not relevant
+          // for this step.
+          // Would be printed when that becomes the inboxTarget in the
+          // outer loop.
+        } catch (e) {
+          print(e);
+        }
+      }
 
-          print('Moving contents of $inboxPath to its local target...');
-          final inboxDestination = [inboxTargetPath];
-          await sync.recursiveCopy(inboxTarget.inboxPath, inboxDestination, move: true);
-        } else {
+      if (hasConflicts) {
+        if (!dryRun) {
           print('Skipping copy and move due to conflicts.');
         }
+        continue; // The individual conflicts were already printed.
+      }
+
+      print('Ready to sync ${inboxTarget.inboxPath}');
+      if (dryRun) {
+        continue;
+      }
+
+      final otherTargetPaths =
+          targetPaths.where((path) => path != inboxTargetPath).toList();
+      for (final package in totalIntersectionPackages) {
+        final sourcePath = p.join(inboxTarget.inboxPath, package);
+        if (!Directory(sourcePath).existsSync()) {
+          continue;
+        }
+
+        print('Copying from $sourcePath to all targets...');
+        final destinations =
+            otherTargetPaths.map((path) => p.join(path, package)).toList();
+        await sync.recursiveCopy(sourcePath, destinations);
+
+        print('Moving contents of $sourcePath to its local target...');
+        final inboxDestination = [p.join(inboxTargetPath, package)];
+        await sync.recursiveCopy(sourcePath, inboxDestination, move: true);
       }
     } catch (e) {
       print(e);

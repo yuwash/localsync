@@ -87,6 +87,26 @@ class Target {
     return createdPackages;
   }
 
+  ({Set<String> ourAdditional, Set<String> theirAdditional})? comparePackages(
+    Target other,
+  ) {
+    final packagesSet = this.config.packages.toSet();
+    final otherPackagesSet = other.config.packages.toSet();
+    final comparison = (
+      ourAdditional: packagesSet.difference(otherPackagesSet),
+      theirAdditional: otherPackagesSet.difference(packagesSet),
+    );
+    if (comparison.ourAdditional.isEmpty &&
+        comparison.theirAdditional.isEmpty) {
+      return null;
+    }
+    return comparison;
+  }
+
+  static Set<String> intersectionPackages(Iterable<Target> targets) => targets
+      .map((target) => target.config.packages.toSet())
+      .reduce((a, b) => a.intersection(b));
+
   Future<Map<String, List<String>>> findConflicts([Target? inboxTarget]) async {
     final targetDir = Directory(this.path);
     final config = this.config;
@@ -102,10 +122,14 @@ class Target {
       throw Exception('Error: Packages not found or not a list');
     }
     final inboxPath = (inboxTarget ?? this).inboxPath;
+    final intersectionPackages =
+        (inboxTarget == null)
+            ? packages
+            : Target.intersectionPackages([this, inboxTarget]);
     return await findConflictsForTarget(
       inboxPath,
       this.path,
-      packages.cast<String>(),
+      intersectionPackages,
     );
   }
 }
@@ -113,7 +137,7 @@ class Target {
 Future<Map<String, List<String>>> findConflictsForTarget(
   String inboxPath,
   String targetPath,
-  List<String> packages,
+  Iterable<String> packages,
 ) async {
   if (!Directory(inboxPath).existsSync()) {
     return {};
