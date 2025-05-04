@@ -89,4 +89,69 @@ void main() {
       await target2Dir.delete(recursive: true);
     },
   );
+
+  test(
+    'recursiveCopy moves files correctly when move is true',
+    () async {
+      final target1Dir = await Directory.systemTemp.createTemp('target1');
+      final target2Dir = await Directory.systemTemp.createTemp('target2');
+      final fileStructure = {
+        'package1': {'file1.txt': 'content1', 'file2.txt': 'content2'},
+      };
+      utils.setupFiles(target1Dir.path, fileStructure);
+
+      final destinations = [target2Dir.path];
+
+      await recursiveCopy(target1Dir.path, destinations,
+          useCpIfAvailable: false, move: true);
+
+      final target2Package1File1 = File(
+        p.join(target2Dir.path, 'package1', 'file1.txt'),
+      );
+      final target2Package1File2 = File(
+        p.join(target2Dir.path, 'package1', 'file2.txt'),
+      );
+
+      expect(target2Package1File1.readAsStringSync(), equals('content1'));
+      expect(target2Package1File2.readAsStringSync(), equals('content2'));
+
+      expect(await target1Dir.list().toList(), []);
+
+      await target2Dir.delete(recursive: true);
+    },
+  );
+
+  test(
+    'recursiveCopy moves files correctly when move is true and destination does not exist',
+    () async {
+      final target1Dir = await Directory.systemTemp.createTemp('target1');
+      final target2ParentDir = await Directory.systemTemp.createTemp('target2Parent');
+      final target2DirPath = p.join(target2ParentDir.path, 'target2');
+      final fileStructure = {
+        'package1': {'file1.txt': 'content1', 'file2.txt': 'content2'},
+      };
+      utils.setupFiles(target1Dir.path, fileStructure);
+
+      final destinations = [target2DirPath];
+
+      await recursiveCopy(target1Dir.path, destinations,
+          useCpIfAvailable: false, move: true);
+
+      expect(target1Dir.existsSync(), isFalse);
+
+      final target2Package1File1 = File(
+        p.join(target2DirPath, 'package1', 'file1.txt'),
+      );
+      final target2Package1File2 = File(
+        p.join(target2DirPath, 'package1', 'file2.txt'),
+      );
+
+      final target2Dir = Directory(target2DirPath);
+      expect(target2Dir.existsSync(), isTrue);
+      expect(target2Package1File1.readAsStringSync(), equals('content1'));
+      expect(target2Package1File2.readAsStringSync(), equals('content2'));
+
+      await target2ParentDir.delete(recursive: true);
+    },
+  );
 }
