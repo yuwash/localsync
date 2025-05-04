@@ -14,6 +14,7 @@ Future<void> recursiveCopy(
   final useCp = !move && useCpIfAvailable && await _isCpAvailable();
 
   for (final destination in destinations) {
+    final destinationDir = Directory(destination);
     if (useCp) {
       final cpArguments = ['-arT', source, destination];
       final process = await Process.run('cp', cpArguments);
@@ -28,6 +29,10 @@ Future<void> recursiveCopy(
       continue;
     }
     final sourceDir = Directory(source);
+    if (move && !destinationDir.existsSync()) {
+      sourceDir.renameSync(destination);
+      continue;
+    }
     final Stream<FileSystemEntity> entities =
         sourceDir.existsSync() ? sourceDir.list() : Stream.fromIterable([sourceDir]);
     await for (final entity in entities) {
