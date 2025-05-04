@@ -8,6 +8,9 @@ Future<void> recursiveCopy(
   bool move = false,
   bool useCpIfAvailable = true,
 }) async {
+  if (move && destinations.length > 1) {
+    throw ArgumentError('Cannot move to multiple destinations.');
+  }
   final useCp = !move && useCpIfAvailable && await _isCpAvailable();
 
   for (final destination in destinations) {
